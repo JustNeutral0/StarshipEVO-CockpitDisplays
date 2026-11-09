@@ -31,6 +31,16 @@ Needs [EvoCore](https://github.com/JustNeutral0/StarshipEVO-EvoCore) (install it
 2. Pick the `justneutral.cockpitdisplays-<version>.zip` asset, then install it into your profile.
 3. Launch the game through Uplink.
 
+## Building from source
+
+You need the .NET SDK and Starship EVO with BepInEx (Starship Uplink sets it up). This mod builds against EvoCore's source: clone [StarshipEVO-EvoCore](https://github.com/JustNeutral0/StarshipEVO-EvoCore) next to this repo (both folders side by side).
+
+```
+dotnet build CockpitDisplays.csproj -c Release -p:Loader=BepInEx -p:Game="C:\path\to\Starship EVO"
+```
+
+`-p:Game` is your game folder (it defaults to the usual Steam location). The DLL lands in `bin\BepInEx\Release\`.
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE). Starship EVO itself belongs to its developers.
