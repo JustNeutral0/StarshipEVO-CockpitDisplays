@@ -20,7 +20,7 @@ Put a tag in a screen block's text:
   HUD on it from Lua.
 
 It runs on sensible defaults. Resolution, sharpness, refresh rate and far objects can be tuned in the
-**Camera screens** tab of the Mod Settings mod, which isn't published yet.
+**Camera screens** tab of [Mod Settings](https://github.com/JustNeutral0/StarshipEVO-ModSettings) (optional).
 
 ## Install
 
