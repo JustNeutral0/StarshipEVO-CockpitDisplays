@@ -3,7 +3,7 @@
 A Starship EVO mod for **windowless cockpits**: screen blocks and painted surfaces that show live views of the
 outside, plus surfaces a [Lua Computer](https://github.com/JustNeutral0/StarshipEVO-EvoCore) can draw a HUD on.
 
-> Early test release. Built and tested against Starship EVO early-access **26w45a**, single-player.
+> Early test release. Built and tested against Starship EVO early-access **26w45a** (Unity 6 beta), single-player.
 > Game updates may break it until it's rebuilt. Please report problems in Issues.
 
 ## What it adds
@@ -26,6 +26,8 @@ It runs on sensible defaults. Resolution, sharpness, refresh rate and far object
 
 Needs [EvoCore](https://github.com/JustNeutral0/StarshipEVO-EvoCore) (install it first) and
 [Starship Uplink](https://github.com/MadTheDog/Starship-Uplink).
+
+**First, the game build:** these mods are built for the **Unity 6 beta** of Starship EVO, not the default build. In Steam, right-click Starship EVO, open **Properties > Betas**, pick **unity6**, and let it update. The mods don't work on the default build (character creation breaks, for one).
 
 1. In Uplink, choose **Add from GitHub** and enter `JustNeutral0/StarshipEVO-CockpitDisplays`.
 2. Pick the `justneutral.cockpitdisplays-<version>.zip` asset, then install it into your profile.
