@@ -13,7 +13,7 @@ using UnityEngine;
 using VoxelEngine;
 
 #if !BEPINEX
-[assembly: MelonLoader.MelonInfo(typeof(CockpitDisplays.Mod), "Cockpit Displays", "0.14.13", "Claude")]
+[assembly: MelonLoader.MelonInfo(typeof(CockpitDisplays.Mod), "Cockpit Displays", "0.15.1", "Claude")]
 [assembly: MelonLoader.MelonGame("Moonfire Entertainment", "Starship EVO")]
 [assembly: MelonLoader.MelonAdditionalDependencies("EvoCore")]
 #endif
@@ -52,7 +52,7 @@ namespace CockpitDisplays
     }
 
 #if BEPINEX
-    [BepInEx.BepInPlugin("evo.cockpitdisplays", "Cockpit Displays", "0.14.13")]
+    [BepInEx.BepInPlugin("evo.cockpitdisplays", "Cockpit Displays", "0.15.1")]
     [BepInEx.BepInDependency("evo.core")]
 #endif
     public partial class Mod : EvoMod

@@ -30,7 +30,7 @@ namespace CockpitDisplays
             var cameras = commands.OfType<EnterCommandCamera>().Where(c => c.brickCoord.entity != null).ToList();
             TagRigScreens(commands);
             var seen = new HashSet<CommandInputText>();
-            var surfaceScreens = new HashSet<CommandInputText>();
+            var surfaceScreens = new HashSet<Command>();
             foreach (var screen in commands.OfType<CommandInputText>())
             {
                 if (screen.textMeshPro == null || screen.brickCoord.entity == null) continue;
@@ -60,6 +60,13 @@ namespace CockpitDisplays
                 }
             }
             foreach (var gone in screens.Keys.Where(s => !seen.Contains(s)).ToList()) Detach(gone, screens[gone]);
+            // EvoCore's Display Decals: each a display of its own.
+            foreach (var decal in commands.OfType<EvoCore.DisplayDecal>())
+            {
+                if (decal.brickCoord.entity == null) continue;
+                surfaceScreens.Add(decal);
+                KeepDecalDisplay(decal, cameras);
+            }
             PruneDisplays(surfaceScreens);
             foreach (var feed in feeds)
                 feed.Used = feed.Display != null || screens.Values.Any(s => s.Feed == feed);
@@ -106,7 +113,7 @@ namespace CockpitDisplays
             {
                 var d = pair.Value;
                 if (d.Go == null) continue;
-                var on = Powered(pair.Key);
+                var on = d.Controller == null || Powered(d.Controller);
                 // [screen] surfaces show only the Lua canvas: dark glass, and their feed is never drawn.
                 var glassOnly = d.Mode == "screen";
                 d.Go.GetComponent<MeshRenderer>().sharedMaterial = !on ? OffMaterial : glassOnly ? GlassMaterial : d.Feed.Material;

@@ -30,7 +30,9 @@ namespace CockpitDisplays
                 "on", "set false or true to switch them all; reading it says whether any is on",
                 "auto()", "all back to their logic links");
             // EvoCore asks which blocks can carry a Lua canvas: a display surface's controller screen.
-            Monitors.SurfaceAspect = c => c is CommandInputText s && displays.TryGetValue(s, out var d) && d.CanvasAspect > 0f ? d.CanvasAspect : 0f;
+            Monitors.SurfaceAspect = c => c != null && displays.TryGetValue(c, out var d) && d.CanvasAspect > 0f ? d.CanvasAspect : 0f;
+            // ...and where the player aims on one, for touch.
+            Monitors.SurfaceHit = SurfaceHit;
         }
 
         public class DisplaysApi
@@ -47,7 +49,7 @@ namespace CockpitDisplays
             List<CommandInputText> Mine()
             {
                 var at = c.Host.brickCoord.entity != null ? c.Host.brickCoord.WorldPosition : default;
-                return screens.Keys.Concat(displays.Keys)
+                return screens.Keys.Concat(displays.Values.Where(v => v.Controller != null).Select(v => v.Controller))
                     .Where(s => s.brickCoord.entity != null && s.brickCoord.entity.Parent == c.Ship)
                     .OrderBy(s => (s.brickCoord.WorldPosition - at).sqrMagnitude)
                     .ToList();

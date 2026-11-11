@@ -36,7 +36,10 @@ namespace CockpitDisplays
 
         class Display
         {
-            public CommandInputText Controller;
+            // The block the display belongs to (its key): a controller screen, or a Display Decal (EvoCore), which is a
+            // display on its own: just its own decal, no controller screen.
+            public Command Owner;
+            public CommandInputText Controller;   // null for a Display Decal
             public string Mode;
             public Color32 Color;
             public ParentEntity Construct;
@@ -65,7 +68,7 @@ namespace CockpitDisplays
             public Vector3 FacingLocal;
         }
 
-        static readonly Dictionary<CommandInputText, Display> displays = new Dictionary<CommandInputText, Display>();
+        static readonly Dictionary<Command, Display> displays = new Dictionary<Command, Display>();
 
         // The mode and colour of a [mode, COLOR] tag. COLOR is "match" (the screen's own paint, so the screen and its
         // surfaces are painted with the same swatch), a swatch name or position (Swatch), #RRGGBB / RRGGBB, or an
@@ -163,29 +166,53 @@ namespace CockpitDisplays
         // Called from the screen scan for each screen with a [mode, COLOR] tag.
         static void KeepDisplay(CommandInputText screen, string mode, Color32 color, List<EnterCommandCamera> cameras)
         {
-            displays.TryGetValue(screen, out var d);
-            if (d != null && (d.Mode != mode || !SameColor(d.Color, color))) { DropDisplay(screen, d); d = null; }
-            if (d == null)
-            {
-                d = new Display { Controller = screen, Mode = mode, Color = color, Construct = screen.brickCoord.entity.Parent };
-                var w = Mathf.Max(64, Mathf.RoundToInt(UnityEngine.Screen.width * DisplayScale * Overscan));
-                var h = Mathf.Max(64, Mathf.RoundToInt(UnityEngine.Screen.height * DisplayScale * Overscan));
-                d.Feed = NewFeed(w, h);
-                d.Feed.Display = d;
-                d.Feed.Construct = d.Construct;
-                d.Mesh = new Mesh { name = "Cockpit Displays Display", indexFormat = IndexFormat.UInt32 };
-                d.Mesh.MarkDynamic();
-                d.Go = new GameObject("Cockpit Displays Display");
-                d.Go.layer = screen.textMeshPro.gameObject.layer;
-                d.Go.AddComponent<MeshFilter>().sharedMesh = d.Mesh;
-                d.Go.AddComponent<MeshRenderer>().sharedMaterial = d.Feed.Material;
-                screen.textMeshPro.GetComponent<MeshRenderer>().enabled = false;
-                displays[screen] = d;
-            }
+            var d = Ensure(screen, screen, mode, color, screen.textMeshPro.gameObject.layer);
             // From the nearest Camera block if there is one ([view] and [camera]), else from the player's eye with the
             // construct left out.
             d.Feed.Proxy = mode == "view" || mode == "camera" ? NearestCamera(screen, cameras) : null;
             d.Feed.Scene = GetScene(d.Feed.Proxy != null ? null : d.Construct);
+            BuildDisplay(d);
+        }
+
+        // A display for its owner (made, or remade when its mode or colour changed).
+        static Display Ensure(Command owner, CommandInputText controller, string mode, Color32 color, int layer)
+        {
+            displays.TryGetValue(owner, out var d);
+            if (d != null && (d.Mode != mode || !SameColor(d.Color, color))) { DropDisplay(owner, d); d = null; }
+            if (d != null) return d;
+            d = new Display { Owner = owner, Controller = controller, Mode = mode, Color = color, Construct = owner.brickCoord.entity.Parent };
+            var w = Mathf.Max(64, Mathf.RoundToInt(UnityEngine.Screen.width * DisplayScale * Overscan));
+            var h = Mathf.Max(64, Mathf.RoundToInt(UnityEngine.Screen.height * DisplayScale * Overscan));
+            d.Feed = NewFeed(w, h);
+            d.Feed.Display = d;
+            d.Feed.Construct = d.Construct;
+            d.Mesh = new Mesh { name = "Cockpit Displays Display", indexFormat = IndexFormat.UInt32 };
+            d.Mesh.MarkDynamic();
+            d.Go = new GameObject("Cockpit Displays Display");
+            d.Go.layer = layer;
+            d.Go.AddComponent<MeshFilter>().sharedMesh = d.Mesh;
+            d.Go.AddComponent<MeshRenderer>().sharedMaterial = d.Feed.Material;
+            if (controller != null) controller.textMeshPro.GetComponent<MeshRenderer>().enabled = false;
+            displays[owner] = d;
+            return d;
+        }
+
+        // An EvoCore Display Decal: a [screen] display of just itself, in its own paint. On a wall the picture stands
+        // upright by the ship's up, however the decal was turned while placing (turned on its end it is a tall
+        // screen, not a sideways one); on a floor or ceiling up is the decal's own. DecalTurn turns it in quarter turns.
+        public static int DecalTurn;
+        static int decalLayer = -1;
+
+        static void KeepDecalDisplay(EvoCore.DisplayDecal decal, List<EnterCommandCamera> cameras)
+        {
+            if (decalLayer < 0)
+            {
+                var any = CommandManager.commands.Datas.OfType<CommandInputText>().FirstOrDefault(s => s.textMeshPro != null);
+                decalLayer = any != null ? any.textMeshPro.gameObject.layer : 0;
+            }
+            var d = Ensure(decal, null, "screen", decal.brickCoord.brickData.color, decalLayer);
+            d.Feed.Proxy = null;
+            d.Feed.Scene = GetScene(d.Construct);
             BuildDisplay(d);
         }
 
@@ -223,12 +250,12 @@ namespace CockpitDisplays
             return swatch >= 0;
         }
 
-        static void PruneDisplays(HashSet<CommandInputText> keep)
+        static void PruneDisplays(HashSet<Command> keep)
         {
-            foreach (var screen in displays.Keys.Where(s => !keep.Contains(s)).ToList()) DropDisplay(screen, displays[screen]);
+            foreach (var owner in displays.Keys.Where(s => !keep.Contains(s)).ToList()) DropDisplay(owner, displays[owner]);
         }
 
-        static void DropDisplay(CommandInputText screen, Display d)
+        static void DropDisplay(Command owner, Display d)
         {
             if (d.Go != null) Object.Destroy(d.Go);
             if (d.Mesh != null) Object.Destroy(d.Mesh);
@@ -236,8 +263,8 @@ namespace CockpitDisplays
             if (d.OverlayMesh != null) Object.Destroy(d.OverlayMesh);
             if (d.OverlayMaterial != null) Object.Destroy(d.OverlayMaterial);
             if (d.Feed != null) DropFeed(d.Feed);
-            displays.Remove(screen);
-            if (screen.textMeshPro != null) screen.textMeshPro.GetComponent<MeshRenderer>().enabled = true;
+            displays.Remove(owner);
+            if (d.Controller != null && d.Controller.textMeshPro != null) d.Controller.textMeshPro.GetComponent<MeshRenderer>().enabled = true;
         }
 
         // Re-cut the surfaces when the painted blocks change (checked every scan: added, removed, moved, repainted).
@@ -246,8 +273,12 @@ namespace CockpitDisplays
             var tree = d.Construct != null ? d.Construct.Tree : null;
             if (tree == null) return;
             long signature = tree.ChildrensAndSelf.Count;
-            var area = Area(d.Controller, out var areaZ);
+            var areaZ = 0f;
+            var area = d.Controller != null ? Area(d.Controller, out areaZ) : default;
             signature = signature * 31 + area.GetHashCode();
+            // A Display Decal's display is just that decal.
+            var own = d.Controller == null ? d.Owner.brickCoord.brickData.instanceId : -1;
+            if (d.Controller == null) signature = signature * 31 + DecalTurn;
             var matches = new List<(VoxelEntity Entity, BrickInstanceData Brick)>();
             foreach (var e in tree.ChildrensAndSelf)
             {
@@ -258,7 +289,8 @@ namespace CockpitDisplays
                 for (int i = 0; i < bricks.Length; i++)
                 {
                     var b = bricks[i];
-                    if (!b.IsValid || b.Brick == null || !b.Brick.IsDecal || !SameColor(b.color, d.Color)) continue;
+                    if (!b.IsValid || b.Brick == null || !b.Brick.IsDecal) continue;
+                    if (d.Controller == null ? b.instanceId != own : !SameColor(b.color, d.Color) || b.Brick.brickID == EvoCore.DisplayDecals.Id) continue;
                     matches.Add((e, b));
                     signature = signature * 31 + b.instanceId;
                     signature = signature * 31 + b.gridPosition.GetHashCode();
@@ -293,13 +325,16 @@ namespace CockpitDisplays
                 d.Groups.Add((group.Key, start, local.Count - start));
             }
             // The controller screen's own picture area, in its text's space.
-            var controllerStart = local.Count;
-            while (normals.Count < local.Count) normals.Add(Vector3.up);
-            Vector3 C(float x, float y) => new Vector3(x, y, areaZ);
-            Subdivide(C(area.xMin, area.yMin), C(area.xMax, area.yMin), C(area.xMax, area.yMax), local, tris, d.Controller.textMeshPro.transform);
-            Subdivide(C(area.xMin, area.yMin), C(area.xMax, area.yMax), C(area.xMin, area.yMax), local, tris, d.Controller.textMeshPro.transform);
-            d.Groups.Add((null, controllerStart, local.Count - controllerStart));
-            while (normals.Count < local.Count) normals.Add(Vector3.back); // the text's front, in its own space
+            if (d.Controller != null)
+            {
+                var controllerStart = local.Count;
+                while (normals.Count < local.Count) normals.Add(Vector3.up);
+                Vector3 C(float x, float y) => new Vector3(x, y, areaZ);
+                Subdivide(C(area.xMin, area.yMin), C(area.xMax, area.yMin), C(area.xMax, area.yMax), local, tris, d.Controller.textMeshPro.transform);
+                Subdivide(C(area.xMin, area.yMin), C(area.xMax, area.yMax), C(area.xMin, area.yMax), local, tris, d.Controller.textMeshPro.transform);
+                d.Groups.Add((null, controllerStart, local.Count - controllerStart));
+                while (normals.Count < local.Count) normals.Add(Vector3.back); // the text's front, in its own space
+            }
             d.Local = local.ToArray();
             d.Normals = normals.ToArray();
             d.Raw = new Vector3[d.Local.Length];
@@ -319,25 +354,67 @@ namespace CockpitDisplays
         // average up, and the controller's front), up along the ship's up, scaled to the bounding rectangle.
         static void BuildCanvas(Display d, List<(VoxelEntity Entity, BrickInstanceData Brick)> decals, List<int> tris)
         {
-            var text = d.Controller.textMeshPro != null ? d.Controller.textMeshPro.transform : null;
+            var text = d.Controller != null && d.Controller.textMeshPro != null ? d.Controller.textMeshPro.transform : null;
             var world = new Vector3[d.Local.Length];
             foreach (var (entity, start, count) in d.Groups)
                 for (int k = start; k < start + count; k++)
                     world[k] = entity == null ? (text != null ? text.TransformPoint(d.Local[k]) : Vector3.zero) : entity.TransformData.LocalToWorld(d.Local[k]);
-            var facing = text != null ? -text.forward : Vector3.zero;
+            // The decals decide which way the display faces; the controller screen only when there are none, since it
+            // can sit on a console turned another way (it was averaged in, and one turned 90 degrees tipped the whole
+            // picture 45 degrees off the wall, seen from behind).
+            var facing = Vector3.zero;
             foreach (var (entity, decal) in decals) facing += entity.TransformData.rotation * (decal.Quaternion * Vector3.up);
+            if (facing.sqrMagnitude < 1e-6f && text != null) facing = -text.forward;
             if (facing.sqrMagnitude < 1e-6f) facing = Vector3.forward;
             facing.Normalize();
-            var shipRotation = d.Controller.brickCoord.TransformData.rotation;
-            var up = Vector3.ProjectOnPlane(shipRotation * Vector3.up, facing);
+            // Up is the controller screen's up (it was placed to read upright); the ship's up only if that lies along
+            // the facing (a ship whose up runs along the wall's face put the picture on its side).
+            var shipRotation = d.Owner.brickCoord.TransformData.rotation;
+            var up = text != null ? Vector3.ProjectOnPlane(text.up, facing) : Vector3.zero;
+            // A Display Decal: the ship's up across its face (the decal's own on a floor or ceiling, where the ship's
+            // has next to nothing across it), DecalTurn quarter turns round.
+            if (d.Controller == null && decals.Count > 0)
+            {
+                var (de, db) = decals[0];
+                var across = Vector3.ProjectOnPlane(de.TransformData.rotation * Vector3.up, facing);
+                if (across.sqrMagnitude < 0.1f) across = Vector3.ProjectOnPlane(de.TransformData.rotation * (db.Quaternion * Vector3.forward), facing);
+                up = Quaternion.AngleAxis(90f * DecalTurn, facing) * across;
+            }
+            if (up.sqrMagnitude < 1e-4f) up = Vector3.ProjectOnPlane(shipRotation * Vector3.up, facing);
             if (up.sqrMagnitude < 1e-4f) up = Vector3.ProjectOnPlane(shipRotation * Vector3.forward, facing);
             up.Normalize();
             var right = Vector3.Cross(facing, up);
+            // The controller screen is part of the display only where it touches the decals' surface (built into the
+            // wall); one standing apart would stretch the picture across the gap between them, drawn in mid-air.
+            int ownStart = 0, ownCount = 0;
+            foreach (var (entity, start, count) in d.Groups) if (entity == null) { ownStart = start; ownCount = count; }
+            if (ownCount > 0 && decals.Count > 0)
+            {
+                var surface = new Bounds();
+                var any = false;
+                for (int k = 0; k < world.Length; k++)
+                {
+                    if (k >= ownStart && k < ownStart + ownCount) continue;
+                    if (!any) { surface = new Bounds(world[k], Vector3.zero); any = true; } else surface.Encapsulate(world[k]);
+                }
+                surface.Expand(0.1f);
+                // Touching, and level with it: a screen against the wall but standing out from it isn't part of it (the
+                // picture is laid flat at the surface's front, so its share would float in front of the wall).
+                var wallFront = float.MinValue;
+                for (int k = 0; k < world.Length; k++) if (k < ownStart || k >= ownStart + ownCount) wallFront = Mathf.Max(wallFront, Vector3.Dot(world[k], facing));
+                var touching = false;
+                for (int k = ownStart; k < ownStart + ownCount && !touching; k++) touching = surface.Contains(world[k]);
+                for (int k = ownStart; k < ownStart + ownCount && touching; k++) touching = Mathf.Abs(Vector3.Dot(world[k], facing) - wallFront) < 0.05f;
+                if (touching) ownStart = ownCount = 0;   // it counts like any other face
+            }
+            else ownStart = ownCount = 0;
+            bool Apart(int k) => k >= ownStart && k < ownStart + ownCount;
             // The canvas spans the faces that look the viewer's way (within about 45 degrees); faces turned further
             // (a booth's side walls) would only get it squeezed edge-on, so they fall outside it and show nothing.
             var main = new HashSet<int>();
             for (int t = 0; t + 2 < tris.Count; t += 3)
             {
+                if (Apart(tris[t]) || Apart(tris[t + 1]) || Apart(tris[t + 2])) continue;
                 var n = Vector3.Cross(world[tris[t + 1]] - world[tris[t]], world[tris[t + 2]] - world[tris[t]]);
                 if (n.sqrMagnitude > 1e-12f && Mathf.Abs(Vector3.Dot(n.normalized, facing)) > 0.7f) { main.Add(tris[t]); main.Add(tris[t + 1]); main.Add(tris[t + 2]); }
             }
@@ -361,13 +438,15 @@ namespace CockpitDisplays
             foreach (var k in main) front = Mathf.Max(front, Vector3.Dot(world[k], facing));
             d.Flat = new float[world.Length];
             for (int k = 0; k < world.Length; k++) d.Flat[k] = front - Vector3.Dot(world[k], facing);
-            d.FacingLocal = Quaternion.Inverse(d.Controller.brickCoord.TransformData.rotation) * facing;
+            d.FacingLocal = Quaternion.Inverse(d.Owner.brickCoord.TransformData.rotation) * facing;
             // The controller screen stands proud of the wall; the canvas is see-through and doesn't hide what's behind,
             // so surface triangles behind the screen's picture would show it a second time, offset. Leave those out.
             var overlayTris = new List<int>(tris.Count);
             float cu0 = float.MaxValue, cu1 = float.MinValue, cv0 = float.MaxValue, cv1 = float.MinValue, cDepth = 0f;
             int cStart = 0, cCount = 0;
             foreach (var (entity, start, count) in d.Groups) if (entity == null) { cStart = start; cCount = count; }
+            // Only a controller that's part of the surface (facing the same way) stands in front of it.
+            if (cCount > 0 && !main.Contains(cStart)) cCount = 0;
             for (int k = cStart; k < cStart + cCount; k++)
             {
                 cu0 = Mathf.Min(cu0, uv[k].x); cu1 = Mathf.Max(cu1, uv[k].x); cv0 = Mathf.Min(cv0, uv[k].y); cv1 = Mathf.Max(cv1, uv[k].y);
@@ -410,17 +489,53 @@ namespace CockpitDisplays
         static void UpdateCanvas(Display d, Vector3 eye)
         {
             if (d.Overlay == null) return;
-            var tex = Show && d.Feed.Posed && Powered(d.Controller) ? EvoCore.Monitors.CanvasTexture(d.Controller) : null;
+            var tex = Show && d.Feed.Posed && (d.Controller == null || Powered(d.Controller)) ? EvoCore.Monitors.CanvasTexture(d.Owner) : null;
             d.Overlay.SetActive(tex != null);
             if (tex == null) return;
             d.OverlayMaterial.mainTexture = tex;
             if (d.OverlayWorld.Length != d.World.Length || d.Flat.Length != d.World.Length) return;
-            var facing = d.Controller.brickCoord.TransformData.rotation * d.FacingLocal;
+            var facing = d.Owner.brickCoord.TransformData.rotation * d.FacingLocal;
             // Only from the side the glass faces.
             if (d.Raw.Length > 0 && Vector3.Dot(eye - d.Raw[0], facing) <= 0f) { d.Overlay.SetActive(false); return; }
             for (int k = 0; k < d.World.Length; k++) d.OverlayWorld[k] = d.Raw[k] + facing * (d.Flat[k] + Lift + 0.005f);
             d.OverlayMesh.vertices = d.OverlayWorld;
             d.OverlayMesh.RecalculateBounds();
+        }
+
+        // For EvoCore's touch: where a ray first meets a shown Lua canvas within reach (its controller screen, the point
+        // as the canvas's texture coordinates, how far), using the canvas layer as drawn this frame.
+        static (Command Block, Vector2 Uv, float Distance)? SurfaceHit(Ray ray, float reach)
+        {
+            (Command, Vector2, float)? best = null;
+            var nearest = reach;
+            foreach (var pair in displays)
+            {
+                var d = pair.Value;
+                if (d.Overlay == null || !d.Overlay.activeSelf || d.OverlayMesh == null) continue;
+                var p = d.OverlayWorld;
+                var uv = d.OverlayMesh.uv;
+                var tris = d.OverlayMesh.triangles;
+                if (uv.Length != p.Length) continue;
+                for (int t = 0; t + 2 < tris.Length; t += 3)
+                {
+                    Vector3 a = p[tris[t]], b = p[tris[t + 1]], c = p[tris[t + 2]];
+                    // Moller-Trumbore, from both sides.
+                    Vector3 e1 = b - a, e2 = c - a, h = Vector3.Cross(ray.direction, e2);
+                    var det = Vector3.Dot(e1, h);
+                    if (Mathf.Abs(det) < 1e-9f) continue;
+                    var s = ray.origin - a;
+                    var u = Vector3.Dot(s, h) / det;
+                    if (u < 0f || u > 1f) continue;
+                    var q = Vector3.Cross(s, e1);
+                    var v = Vector3.Dot(ray.direction, q) / det;
+                    if (v < 0f || u + v > 1f) continue;
+                    var dist = Vector3.Dot(e2, q) / det;
+                    if (dist <= 0f || dist >= nearest) continue;
+                    nearest = dist;
+                    best = (pair.Key, uv[tris[t]] * (1f - u - v) + uv[tris[t + 1]] * u + uv[tris[t + 2]] * v, dist);
+                }
+            }
+            return best;
         }
 
         // A decal is a box (its mesh, resized) that paints wherever it cuts into surfaces facing along its up; blocks
@@ -657,7 +772,7 @@ namespace CockpitDisplays
                 {
                     if (entity == null)
                     {
-                        var space = d.Controller.textMeshPro != null ? d.Controller.textMeshPro.transform : null;
+                        var space = d.Controller != null && d.Controller.textMeshPro != null ? d.Controller.textMeshPro.transform : null;
                         if (space == null) continue;
                         for (int k = start; k < start + count; k++) Place(k, space.TransformPoint(d.Local[k]), space.TransformDirection(d.Normals[k]).normalized);
                     }
